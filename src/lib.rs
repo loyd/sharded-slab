@@ -611,7 +611,7 @@ impl<T, C: cfg::Config> Slab<T, C> {
         test_println!("get {:?}; current={:?}", tid, Tid::<C>::current());
         let shard = self.shards.get(tid.as_usize())?;
         shard.with_slot(key, |slot| {
-            let inner = slot.get(C::unpack_gen(key))?;
+            let inner = unsafe { slot.get_unchecked(C::unpack_gen(key))? };
             let value = ptr::NonNull::from(slot.value().as_ref().unwrap());
             Some(Entry {
                 inner,
@@ -808,20 +808,7 @@ impl<'a, T, C: cfg::Config> std::ops::Deref for Entry<'a, T, C> {
 }
 
 impl<'a, T, C: cfg::Config> Drop for Entry<'a, T, C> {
-    fn drop(&mut self) {
-        let should_remove = unsafe {
-            // Safety: calling `slot::Guard::release` is unsafe, since the
-            // `Guard` value contains a pointer to the slot that may outlive the
-            // slab containing that slot. Here, the `Entry` guard owns a
-            // borrowed reference to the shard containing that slot, which
-            // ensures that the slot will not be dropped while this `Guard`
-            // exists.
-            self.inner.release()
-        };
-        if should_remove {
-            self.shard.clear_after_release(self.key)
-        }
-    }
+    fn drop(&mut self) {}
 }
 
 impl<'a, T, C> fmt::Debug for Entry<'a, T, C>

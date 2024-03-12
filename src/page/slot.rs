@@ -104,6 +104,37 @@ where
     }
 
     #[inline(always)]
+    pub(crate) unsafe fn get_unchecked(&self, gen: Generation<C>) -> Option<Guard<T, C>> {
+        let lifecycle = self.lifecycle.load(Ordering::Acquire);
+        // Unpack the current state.
+        let state = Lifecycle::<C>::from_packed(lifecycle);
+        let current_gen = LifecycleGen::<C>::from_packed(lifecycle).0;
+        let refs = RefCount::<C>::from_packed(lifecycle);
+
+        test_println!(
+            "-> get {:?}; current_gen={:?}; lifecycle={:#x}; state={:?}; refs={:?};",
+            gen,
+            current_gen,
+            lifecycle,
+            state,
+            refs,
+        );
+
+        // Is it okay to access this slot? The accessed generation must be
+        // current, and the slot must not be in the process of being
+        // removed. If we can no longer access the slot at the given
+        // generation, return `None`.
+        if gen != current_gen || state != Lifecycle::PRESENT {
+            test_println!("-> get: no longer exists!");
+            return None;
+        }
+
+        Some(Guard {
+            slot: ptr::NonNull::from(self),
+        })
+    }
+
+    #[inline(always)]
     pub(crate) fn get(&self, gen: Generation<C>) -> Option<Guard<T, C>> {
         let mut lifecycle = self.lifecycle.load(Ordering::Acquire);
         loop {
